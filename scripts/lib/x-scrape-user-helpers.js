@@ -190,6 +190,14 @@ function extractArticleDataFromHtml(html) {
   };
 }
 
+function buildMetadataPath(outputPath) {
+  if (outputPath.endsWith('.jsonl')) {
+    return outputPath.slice(0, -'.jsonl'.length) + '.meta.json';
+  }
+
+  return `${outputPath}.meta.json`;
+}
+
 module.exports = {
   parseArgs,
   normalizePostUrl,
@@ -200,4 +208,5 @@ module.exports = {
   normalizeType,
   normalizeArticleRecord,
   extractArticleDataFromHtml,
+  buildMetadataPath,
 };
