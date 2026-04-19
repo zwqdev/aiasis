@@ -7,11 +7,16 @@ const {
   extractPostIdFromUrl,
   parseMetricValue,
   dedupeKeyForRecord,
+  buildDefaultOutputPath,
 } = require('../scripts/lib/x-scrape-user-helpers');
 
-test('parseArgs requires handle and out', () => {
+test('parseArgs requires handle', () => {
   assert.throws(() => parseArgs([]), /--handle/);
-  assert.throws(() => parseArgs(['--handle', 'coolish']), /--out/);
+});
+
+test('parseArgs uses a per-user default output path when out is omitted', () => {
+  const args = parseArgs(['--handle', 'coolish']);
+  assert.equal(args.out, 'data/coolish/posts.jsonl');
 });
 
 test('parseArgs accepts explicit options', () => {
@@ -57,4 +62,8 @@ test('dedupeKeyForRecord prefers url and falls back to id', () => {
   assert.equal(dedupeKeyForRecord({ url: 'https://x.com/a/status/1', id: '1' }), 'https://x.com/a/status/1');
   assert.equal(dedupeKeyForRecord({ url: null, id: '1' }), 'id:1');
   assert.equal(dedupeKeyForRecord({ url: null, id: null }), null);
+});
+
+test('buildDefaultOutputPath nests records under the user handle directory', () => {
+  assert.equal(buildDefaultOutputPath('coolish'), 'data/coolish/posts.jsonl');
 });

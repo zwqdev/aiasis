@@ -7,6 +7,10 @@ const DEFAULTS = {
   startUrl: null,
 };
 
+function buildDefaultOutputPath(handle) {
+  return `data/${handle}/posts.jsonl`;
+}
+
 function parseArgs(argv) {
   const options = { ...DEFAULTS };
 
@@ -49,7 +53,7 @@ function parseArgs(argv) {
   }
 
   if (!options.out) {
-    throw new Error('Missing required --out');
+    options.out = buildDefaultOutputPath(options.handle);
   }
 
   return options;
@@ -233,6 +237,7 @@ function buildMetadataPath(outputPath) {
 
 module.exports = {
   parseArgs,
+  buildDefaultOutputPath,
   normalizePostUrl,
   extractPostIdFromUrl,
   parseMetricValue,
