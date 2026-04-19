@@ -9,7 +9,8 @@
   "scripts": {
     "test": "node --test",
     "download:posts": "node scripts/x-scrape-user.js",
-    "login:x": "node scripts/x-login.js"
+    "login:x": "node scripts/x-login.js",
+    "analyze:profile": "node scripts/x-analyze-profile.js"
   },
   "keywords": [],
   "author": "",

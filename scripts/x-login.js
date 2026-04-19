@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 const { chromium } = require('playwright');
-const { isIgnorableNavigationAbortError } = require('./lib/x-scrape-user-helpers');
+const {
+  isClosedBrowserError,
+  isIgnorableNavigationAbortError,
+} = require('./lib/x-scrape-user-helpers');
 
 const PROFILE_DIR = '.playwright/x-profile';
-const LOGIN_URL = 'https://x.com/i/flow/login';
+const LOGIN_URL = 'https://x.com/';
 const SUCCESS_URL = 'https://x.com/home';
 
 async function applyLowAutomationPageDefaults(context) {

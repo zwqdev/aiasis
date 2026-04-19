@@ -33,6 +33,13 @@ test('x login bootstrap script exists', () => {
   assert.equal(fs.existsSync(loginScriptPath), true);
 });
 
+test('x login bootstrap script uses the stable X landing page', () => {
+  const loginScriptPath = path.join(__dirname, '..', 'scripts', 'x-login.js');
+  const content = fs.readFileSync(loginScriptPath, 'utf8');
+
+  assert.equal(content.includes("const LOGIN_URL = 'https://x.com/'"), true);
+});
+
 test('buildRunMetadata records session source and chrome profile', () => {
   const metadata = buildRunMetadata(
     { handle: 'coolish', profileDir: '.playwright/x-profile' },
