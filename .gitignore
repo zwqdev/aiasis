@@ -3,6 +3,7 @@ node_modules/
 .playwright/
 .playwright-mcp/
 data/
+coverage/
 dist/
 build/
 .env
