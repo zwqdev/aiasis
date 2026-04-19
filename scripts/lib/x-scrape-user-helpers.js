@@ -134,25 +134,58 @@ function normalizeType(value) {
   return ['post', 'reply', 'repost', 'quote', 'unknown'].includes(value) ? value : 'unknown';
 }
 
+function recoverAuthorNameFromHtml(rawHtmlSnippet) {
+  if (!rawHtmlSnippet) {
+    return null;
+  }
+
+  const match = rawHtmlSnippet.match(/data-testid="User-Name"[\s\S]*?<span[^>]*>([^<@][^<]*)<\/span>/i);
+  return match ? match[1].trim() : null;
+}
+
+function sanitizeQuotedUrl(value) {
+  const normalized = normalizePostUrl(value);
+  if (!normalized || normalized.endsWith('/analytics')) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function sanitizeMediaList(media) {
+  if (!Array.isArray(media)) {
+    return [];
+  }
+
+  return media.filter((item) => {
+    if (!item || !item.url) {
+      return false;
+    }
+
+    return !/\/profile_images\//.test(item.url);
+  });
+}
+
 function normalizeArticleRecord(raw) {
+  const quotedUrl = sanitizeQuotedUrl(raw.quotedUrl);
   return {
     id: extractPostIdFromUrl(raw.url),
     url: normalizePostUrl(raw.url),
     authorHandle: normalizeHandle(raw.authorHandle),
-    authorName: raw.authorName ? String(raw.authorName).trim() : null,
+    authorName: raw.authorName ? String(raw.authorName).trim() : recoverAuthorNameFromHtml(raw.rawHtmlSnippet),
     postedAt: raw.postedAt || null,
     text: raw.text ? String(raw.text).trim() : null,
     lang: raw.lang || null,
-    type: normalizeType(raw.type),
+    type: quotedUrl ? normalizeType(raw.type) : (raw.type === 'quote' ? 'post' : normalizeType(raw.type)),
     replyTo: normalizeHandle(raw.replyTo),
-    quotedUrl: normalizePostUrl(raw.quotedUrl),
+    quotedUrl,
     metrics: {
       reply: parseMetricValue(raw.metrics?.reply),
       repost: parseMetricValue(raw.metrics?.repost),
       like: parseMetricValue(raw.metrics?.like),
       view: parseMetricValue(raw.metrics?.view),
     },
-    media: Array.isArray(raw.media) ? raw.media : [],
+    media: sanitizeMediaList(raw.media),
     rawHtmlSnippet: raw.rawHtmlSnippet || null,
     scrapedAt: raw.scrapedAt || new Date().toISOString(),
   };
@@ -206,6 +239,9 @@ module.exports = {
   dedupeKeyForRecord,
   normalizeHandle,
   normalizeType,
+  recoverAuthorNameFromHtml,
+  sanitizeQuotedUrl,
+  sanitizeMediaList,
   normalizeArticleRecord,
   extractArticleDataFromHtml,
   buildMetadataPath,

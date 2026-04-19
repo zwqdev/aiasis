@@ -337,3 +337,10 @@ The first version is successful if:
 - content distillation pipeline
 - richer thread reconstruction
 - selector fallback packs for X UI variants
+
+## Live Verification Notes
+
+- A real smoke run succeeded with `--headless`, persistent profile reuse, and `--limit 5`.
+- The runtime required a one-time `npx playwright install chromium` before the first live run.
+- Normalization now filters false quote targets ending in `/analytics` and filters avatar-style `profile_images` URLs out of `media`.
+- Some pinned or variant timeline cards can still leave `authorName` as `null`; downstream consumers should treat that field as optional in v1.

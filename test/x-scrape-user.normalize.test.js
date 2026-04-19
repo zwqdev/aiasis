@@ -44,3 +44,26 @@ test('normalizeArticleRecord falls back to unknown type and null metrics', () =>
   assert.equal(record.metrics.reply, null);
   assert.equal(record.id, null);
 });
+
+test('normalizeArticleRecord filters analytics links and avatar images and recovers authorName from html', () => {
+  const record = normalizeArticleRecord({
+    url: 'https://x.com/coolish/status/1662210151057854466',
+    authorHandle: '@coolish',
+    authorName: null,
+    quotedUrl: 'https://x.com/coolish/status/1662210151057854466/analytics',
+    type: 'quote',
+    metrics: {},
+    media: [
+      { type: 'image', url: 'https://pbs.twimg.com/profile_images/1548729057994452992/Kcs8r3YR_normal.jpg' },
+      { type: 'image', url: 'https://pbs.twimg.com/ext_tw_video_thumb/1662209693635448832/pu/img/oW-Qhlcxz70ZPt1Q.jpg' },
+    ],
+    rawHtmlSnippet: '<div data-testid="User-Name"><span>paulwei</span><span>@coolish</span></div>',
+  });
+
+  assert.equal(record.authorName, 'paulwei');
+  assert.equal(record.quotedUrl, null);
+  assert.deepEqual(record.media, [
+    { type: 'image', url: 'https://pbs.twimg.com/ext_tw_video_thumb/1662209693635448832/pu/img/oW-Qhlcxz70ZPt1Q.jpg' },
+  ]);
+  assert.equal(record.type, 'post');
+});
