@@ -121,10 +121,50 @@ function dedupeKeyForRecord(record) {
   return null;
 }
 
+function normalizeHandle(value) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = String(value).trim().replace(/^@/, '');
+  return normalized || null;
+}
+
+function normalizeType(value) {
+  return ['post', 'reply', 'repost', 'quote', 'unknown'].includes(value) ? value : 'unknown';
+}
+
+function normalizeArticleRecord(raw) {
+  return {
+    id: extractPostIdFromUrl(raw.url),
+    url: normalizePostUrl(raw.url),
+    authorHandle: normalizeHandle(raw.authorHandle),
+    authorName: raw.authorName ? String(raw.authorName).trim() : null,
+    postedAt: raw.postedAt || null,
+    text: raw.text ? String(raw.text).trim() : null,
+    lang: raw.lang || null,
+    type: normalizeType(raw.type),
+    replyTo: normalizeHandle(raw.replyTo),
+    quotedUrl: normalizePostUrl(raw.quotedUrl),
+    metrics: {
+      reply: parseMetricValue(raw.metrics?.reply),
+      repost: parseMetricValue(raw.metrics?.repost),
+      like: parseMetricValue(raw.metrics?.like),
+      view: parseMetricValue(raw.metrics?.view),
+    },
+    media: Array.isArray(raw.media) ? raw.media : [],
+    rawHtmlSnippet: raw.rawHtmlSnippet || null,
+    scrapedAt: raw.scrapedAt || new Date().toISOString(),
+  };
+}
+
 module.exports = {
   parseArgs,
   normalizePostUrl,
   extractPostIdFromUrl,
   parseMetricValue,
   dedupeKeyForRecord,
+  normalizeHandle,
+  normalizeType,
+  normalizeArticleRecord,
 };
