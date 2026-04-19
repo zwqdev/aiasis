@@ -158,6 +158,38 @@ function normalizeArticleRecord(raw) {
   };
 }
 
+function firstMatch(value, pattern) {
+  const match = value.match(pattern);
+  return match ? match[1] : null;
+}
+
+function extractArticleDataFromHtml(html) {
+  const url = normalizePostUrl(firstMatch(html, /href="([^"]*\/status\/\d+[^"]*)"/i));
+  const quotedUrl = normalizePostUrl(firstMatch(html, /data-quoted-url="([^"]+)"/i));
+  const replyTo = normalizeHandle(firstMatch(html, /data-reply-to="([^"]+)"/i));
+  const authorHandle = normalizeHandle(firstMatch(html, /data-author-handle="([^"]+)"/i));
+  const authorName = firstMatch(html, /data-author-name="([^"]+)"/i);
+  const postedAt = firstMatch(html, /datetime="([^"]+)"/i);
+  const lang = firstMatch(html, /lang="([^"]+)"/i);
+  const text = firstMatch(html, /<div[^>]*data-post-text="true"[^>]*>([\s\S]*?)<\/div>/i);
+  const type = quotedUrl ? 'quote' : (replyTo ? 'reply' : 'post');
+
+  return {
+    url,
+    authorHandle,
+    authorName,
+    postedAt,
+    text: text ? text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : null,
+    lang,
+    type,
+    replyTo,
+    quotedUrl,
+    metrics: {},
+    media: [],
+    rawHtmlSnippet: html.slice(0, 5000),
+  };
+}
+
 module.exports = {
   parseArgs,
   normalizePostUrl,
@@ -167,4 +199,5 @@ module.exports = {
   normalizeHandle,
   normalizeType,
   normalizeArticleRecord,
+  extractArticleDataFromHtml,
 };
