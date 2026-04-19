@@ -1,0 +1,130 @@
+const DEFAULTS = {
+  profileDir: '.playwright/x-profile',
+  limit: Infinity,
+  headless: false,
+  maxNoNewScrolls: 5,
+  scrollDelayMs: 1200,
+  startUrl: null,
+};
+
+function parseArgs(argv) {
+  const options = { ...DEFAULTS };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+
+    if (token === '--headless') {
+      options.headless = true;
+      continue;
+    }
+
+    const value = argv[index + 1];
+    if (value == null) {
+      throw new Error(`Missing value for ${token}`);
+    }
+
+    if (token === '--handle') {
+      options.handle = value;
+    } else if (token === '--out') {
+      options.out = value;
+    } else if (token === '--profile-dir') {
+      options.profileDir = value;
+    } else if (token === '--limit') {
+      options.limit = Number(value);
+    } else if (token === '--max-no-new-scrolls') {
+      options.maxNoNewScrolls = Number(value);
+    } else if (token === '--scroll-delay-ms') {
+      options.scrollDelayMs = Number(value);
+    } else if (token === '--start-url') {
+      options.startUrl = value;
+    } else {
+      throw new Error(`Unknown argument: ${token}`);
+    }
+
+    index += 1;
+  }
+
+  if (!options.handle) {
+    throw new Error('Missing required --handle');
+  }
+
+  if (!options.out) {
+    throw new Error('Missing required --out');
+  }
+
+  return options;
+}
+
+function normalizePostUrl(value) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    parsed.host = 'x.com';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function extractPostIdFromUrl(value) {
+  const normalized = normalizePostUrl(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const match = normalized.match(/\/status\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function parseMetricValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = String(value).trim().replace(/,/g, '').toUpperCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const match = normalized.match(/^(\d+(?:\.\d+)?)([KM])?$/);
+  if (!match) {
+    return null;
+  }
+
+  const base = Number(match[1]);
+  const suffix = match[2];
+  if (suffix === 'K') {
+    return Math.round(base * 1000);
+  }
+
+  if (suffix === 'M') {
+    return Math.round(base * 1000000);
+  }
+
+  return Math.round(base);
+}
+
+function dedupeKeyForRecord(record) {
+  if (record.url) {
+    return record.url;
+  }
+
+  if (record.id) {
+    return `id:${record.id}`;
+  }
+
+  return null;
+}
+
+module.exports = {
+  parseArgs,
+  normalizePostUrl,
+  extractPostIdFromUrl,
+  parseMetricValue,
+  dedupeKeyForRecord,
+};
