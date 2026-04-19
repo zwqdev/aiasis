@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "download:posts": "node scripts/x-scrape-user.js"
+    "download:posts": "node scripts/x-scrape-user.js",
+    "login:x": "node scripts/x-login.js"
   },
   "keywords": [],
   "author": "",

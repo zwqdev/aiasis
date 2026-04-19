@@ -9,7 +9,20 @@ const {
   normalizeArticleRecord,
   dedupeKeyForRecord,
   buildMetadataPath,
+  buildRunMetadata,
+  hasAuthCookies,
+  isClosedBrowserError,
+  resolveBrowserContextOptions,
 } = require('./lib/x-scrape-user-helpers');
+const { scrollTimelineForMore } = require('./lib/x-scrape-user-browser');
+
+async function applyLowAutomationPageDefaults(context) {
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => false,
+    });
+  });
+}
 
 async function ensureParentDir(filePath) {
   await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
@@ -154,6 +167,58 @@ async function writeMetadata(options, metadata) {
   await fs.promises.writeFile(buildMetadataPath(options.out), JSON.stringify(metadata, null, 2));
 }
 
+function rewriteLaunchError(error, contextOptions) {
+  const message = String(error && error.message ? error.message : error);
+  if (/ProcessSingleton|SingletonLock|profile directory is already in use|profile is already in use/i.test(message)) {
+    return new Error('Persistent Playwright profile is currently locked by another browser process. Close the existing .playwright/x-profile browser window and retry.');
+  }
+
+  return error;
+}
+
+async function waitForAuthenticatedSession(context, timeoutMs) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    let cookies;
+    try {
+      cookies = await context.cookies('https://x.com');
+    } catch (error) {
+      if (isClosedBrowserError(error)) {
+        throw new Error('Login window was closed before authentication completed. Run npm run login:x to initialize .playwright/x-profile, then rerun the download command.');
+      }
+
+      throw error;
+    }
+
+    if (hasAuthCookies(cookies)) {
+      return true;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  return false;
+}
+
+async function ensureAuthenticatedSession(context, page, options, contextOptions) {
+  const cookies = await context.cookies('https://x.com');
+  if (hasAuthCookies(cookies)) {
+    return;
+  }
+
+  if (options.headless) {
+    throw new Error('Authenticated X session required in headless mode. Re-run without --headless and log in once using the persistent profile.');
+  }
+
+  console.error('no authenticated X session found; opening login page');
+  await page.goto('https://x.com/i/flow/login', { waitUntil: 'domcontentloaded' });
+  const authenticated = await waitForAuthenticatedSession(context, 5 * 60 * 1000);
+  if (!authenticated) {
+    throw new Error('Timed out waiting for X login to complete in the persistent profile');
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const targetUrl = options.startUrl || `https://x.com/${options.handle}`;
@@ -163,17 +228,29 @@ async function main() {
   let scrollRounds = 0;
   let noNewRounds = 0;
   let stopReason = 'unknown';
+  const contextOptions = resolveBrowserContextOptions(options);
 
   await ensureParentDir(options.out);
   const outputStream = fs.createWriteStream(options.out, { flags: 'a' });
-  const context = await chromium.launchPersistentContext(options.profileDir, {
-    headless: options.headless,
-    viewport: { width: 1440, height: 1200 },
-  });
+  let context;
+  const activeContextOptions = contextOptions;
+  try {
+    context = await chromium.launchPersistentContext(activeContextOptions.userDataDir, {
+      channel: activeContextOptions.channel || undefined,
+      headless: options.headless,
+      viewport: { width: 1440, height: 1200 },
+      ignoreDefaultArgs: activeContextOptions.ignoreDefaultArgs,
+      args: activeContextOptions.launchArgs,
+    });
+  } catch (error) {
+    throw rewriteLaunchError(error, activeContextOptions);
+  }
 
   try {
+    await applyLowAutomationPageDefaults(context);
     const page = context.pages()[0] || await context.newPage();
     console.error('browser launched');
+    await ensureAuthenticatedSession(context, page, options, activeContextOptions);
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
     await waitForTimeline(page);
     console.error('profile opened');
@@ -210,7 +287,9 @@ async function main() {
         break;
       }
 
-      if (newCount === 0) {
+      const scrollResult = await scrollTimelineForMore(page, { scrollDelayMs: options.scrollDelayMs });
+
+      if (newCount === 0 && !scrollResult.loadedMore && !scrollResult.scrolled) {
         noNewRounds += 1;
       } else {
         noNewRounds = 0;
@@ -222,10 +301,6 @@ async function main() {
       }
 
       scrollRounds += 1;
-      await page.evaluate(() => {
-        window.scrollBy(0, window.innerHeight);
-      });
-      await page.waitForTimeout(options.scrollDelayMs);
     }
   } catch (error) {
     stopReason = `error:${error.message}`;
@@ -233,15 +308,15 @@ async function main() {
   } finally {
     await closeStream(outputStream);
     await writeMetadata(options, {
-      handle: options.handle,
-      effectiveUrl: targetUrl,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      totalUniqueItemsWritten: totalWritten,
-      scrollRounds,
-      stopReason,
-      profileDir: options.profileDir,
-      args: options,
+      ...buildRunMetadata(options, {
+        targetUrl,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        totalWritten,
+        scrollRounds,
+        stopReason,
+        sessionSource: activeContextOptions.sessionSource,
+      }),
     });
     await context.close();
   }

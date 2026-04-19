@@ -5,10 +5,27 @@ const DEFAULTS = {
   maxNoNewScrolls: 5,
   scrollDelayMs: 1200,
   startUrl: null,
+  useSystemChrome: false,
+  usePlaywrightProfile: true,
 };
 
 function buildDefaultOutputPath(handle) {
   return `data/${handle}/posts.jsonl`;
+}
+
+function hasAuthCookies(cookies) {
+  const names = new Set((cookies || []).map((cookie) => cookie.name));
+  return names.has('auth_token') && names.has('ct0');
+}
+
+function isClosedBrowserError(error) {
+  const message = String(error && error.message ? error.message : error);
+  return /Target closed|context or browser has been closed|page, context or browser has been closed/i.test(message);
+}
+
+function isIgnorableNavigationAbortError(error) {
+  const message = String(error && error.message ? error.message : error);
+  return /page\.goto: net::ERR_ABORTED/i.test(message);
 }
 
 function parseArgs(argv) {
@@ -19,6 +36,12 @@ function parseArgs(argv) {
 
     if (token === '--headless') {
       options.headless = true;
+      continue;
+    }
+
+    if (token === '--use-playwright-profile') {
+      options.usePlaywrightProfile = true;
+      options.useSystemChrome = false;
       continue;
     }
 
@@ -57,6 +80,18 @@ function parseArgs(argv) {
   }
 
   return options;
+}
+
+function resolveBrowserContextOptions(options) {
+  return {
+    userDataDir: options.profileDir,
+    systemChromeUserDataDir: null,
+    launchArgs: ['--disable-blink-features=AutomationControlled'],
+    ignoreDefaultArgs: ['--enable-automation'],
+    channel: 'chrome',
+    sessionSource: 'playwright-profile',
+    chromeProfile: null,
+  };
 }
 
 function normalizePostUrl(value) {
@@ -235,9 +270,29 @@ function buildMetadataPath(outputPath) {
   return `${outputPath}.meta.json`;
 }
 
+function buildRunMetadata(options, runtime) {
+  return {
+    handle: options.handle,
+    effectiveUrl: runtime.targetUrl,
+    startedAt: runtime.startedAt,
+    finishedAt: runtime.finishedAt,
+    totalUniqueItemsWritten: runtime.totalWritten,
+    scrollRounds: runtime.scrollRounds,
+    stopReason: runtime.stopReason,
+    profileDir: options.profileDir,
+    sessionSource: runtime.sessionSource,
+    chromeProfile: null,
+    args: options,
+  };
+}
+
 module.exports = {
   parseArgs,
   buildDefaultOutputPath,
+  hasAuthCookies,
+  isClosedBrowserError,
+  isIgnorableNavigationAbortError,
+  resolveBrowserContextOptions,
   normalizePostUrl,
   extractPostIdFromUrl,
   parseMetricValue,
@@ -250,4 +305,5 @@ module.exports = {
   normalizeArticleRecord,
   extractArticleDataFromHtml,
   buildMetadataPath,
+  buildRunMetadata,
 };

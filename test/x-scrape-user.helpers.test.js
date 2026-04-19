@@ -8,6 +8,10 @@ const {
   parseMetricValue,
   dedupeKeyForRecord,
   buildDefaultOutputPath,
+  hasAuthCookies,
+  isClosedBrowserError,
+  isIgnorableNavigationAbortError,
+  resolveBrowserContextOptions,
 } = require('../scripts/lib/x-scrape-user-helpers');
 
 test('parseArgs requires handle', () => {
@@ -17,6 +21,21 @@ test('parseArgs requires handle', () => {
 test('parseArgs uses a per-user default output path when out is omitted', () => {
   const args = parseArgs(['--handle', 'coolish']);
   assert.equal(args.out, 'data/coolish/posts.jsonl');
+});
+
+test('parseArgs defaults to the dedicated Playwright profile', () => {
+  const args = parseArgs(['--handle', 'coolish']);
+
+  assert.equal(args.useSystemChrome, false);
+  assert.equal(args.usePlaywrightProfile, true);
+  assert.equal(args.profileDir, '.playwright/x-profile');
+});
+
+test('parseArgs still accepts explicit playwright-profile mode', () => {
+  const args = parseArgs(['--handle', 'coolish', '--use-playwright-profile']);
+
+  assert.equal(args.useSystemChrome, false);
+  assert.equal(args.usePlaywrightProfile, true);
 });
 
 test('parseArgs accepts explicit options', () => {
@@ -66,4 +85,53 @@ test('dedupeKeyForRecord prefers url and falls back to id', () => {
 
 test('buildDefaultOutputPath nests records under the user handle directory', () => {
   assert.equal(buildDefaultOutputPath('coolish'), 'data/coolish/posts.jsonl');
+});
+
+test('hasAuthCookies requires both auth_token and ct0', () => {
+  assert.equal(hasAuthCookies([{ name: 'auth_token' }, { name: 'ct0' }]), true);
+  assert.equal(hasAuthCookies([{ name: 'auth_token' }]), false);
+  assert.equal(hasAuthCookies([{ name: 'ct0' }]), false);
+  assert.equal(hasAuthCookies([]), false);
+});
+
+test('resolveBrowserContextOptions uses the dedicated Playwright profile by default', () => {
+  const resolved = resolveBrowserContextOptions({
+    useSystemChrome: false,
+    usePlaywrightProfile: true,
+    profileDir: '.playwright/x-profile',
+  });
+
+  assert.equal(resolved.userDataDir, '.playwright/x-profile');
+  assert.equal(resolved.systemChromeUserDataDir, null);
+  assert.deepEqual(resolved.launchArgs, ['--disable-blink-features=AutomationControlled']);
+  assert.deepEqual(resolved.ignoreDefaultArgs, ['--enable-automation']);
+  assert.equal(resolved.channel, 'chrome');
+  assert.equal(resolved.sessionSource, 'playwright-profile');
+});
+
+test('resolveBrowserContextOptions preserves explicit playwright-profile mode', () => {
+  const resolved = resolveBrowserContextOptions({
+    useSystemChrome: false,
+    usePlaywrightProfile: true,
+    chromeProfile: 'Default',
+    profileDir: '.playwright/x-profile',
+  });
+
+  assert.equal(resolved.userDataDir, '.playwright/x-profile');
+  assert.deepEqual(resolved.launchArgs, ['--disable-blink-features=AutomationControlled']);
+  assert.deepEqual(resolved.ignoreDefaultArgs, ['--enable-automation']);
+  assert.equal(resolved.channel, 'chrome');
+  assert.equal(resolved.sessionSource, 'playwright-profile');
+});
+
+test('isClosedBrowserError recognizes closed browser/context errors', () => {
+  assert.equal(isClosedBrowserError(new Error('browserContext.cookies: Target page, context or browser has been closed')), true);
+  assert.equal(isClosedBrowserError(new Error('page.goto: Target closed')), true);
+  assert.equal(isClosedBrowserError(new Error('Timed out waiting for login')), false);
+});
+
+test('isIgnorableNavigationAbortError recognizes post-login navigation aborts', () => {
+  assert.equal(isIgnorableNavigationAbortError(new Error('page.goto: net::ERR_ABORTED at https://x.com/home')), true);
+  assert.equal(isIgnorableNavigationAbortError(new Error('page.goto: net::ERR_ABORTED at https://x.com/i/flow/login')), true);
+  assert.equal(isIgnorableNavigationAbortError(new Error('page.goto: Timeout 30000ms exceeded')), false);
 });

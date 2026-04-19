@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Lazy Timeline Fixture</title>
+    <style>
+      body { font-family: sans-serif; margin: 0; }
+      #timeline { padding: 24px; }
+      article { border-bottom: 1px solid #ddd; min-height: 180px; padding: 16px 0; }
+    </style>
+  </head>
+  <body>
+    <main id="timeline"></main>
+    <script>
+      let loadedBatches = 0;
+      let loading = false;
+      const timeline = document.querySelector('#timeline');
+
+      function appendBatch() {
+        loadedBatches += 1;
+        for (let index = 0; index < 5; index += 1) {
+          const article = document.createElement('article');
+          article.dataset.batch = String(loadedBatches);
+          article.innerHTML = '<a href="https://x.com/example/status/' + (loadedBatches * 100 + index) + '">status</a><time datetime="2026-04-19T00:00:00.000Z"></time><div data-testid="tweetText">batch ' + loadedBatches + ' item ' + index + '</div>';
+          timeline.appendChild(article);
+        }
+      }
+
+      appendBatch();
+
+      window.addEventListener('scroll', () => {
+        const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+        if (!nearBottom || loading || loadedBatches >= 4) {
+          return;
+        }
+
+        loading = true;
+        setTimeout(() => {
+          appendBatch();
+          loading = false;
+        }, 300);
+      });
+    </script>
+  </body>
+</html>
