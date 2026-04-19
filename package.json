@@ -10,7 +10,9 @@
     "test": "node --test",
     "download:posts": "node scripts/x-scrape-user.js",
     "login:x": "node scripts/x-login.js",
-    "analyze:profile": "node scripts/x-analyze-profile.js"
+    "analyze:profile": "node scripts/x-analyze-profile.js",
+    "bot": "node scripts/trading-bot/index.js",
+    "bot:once": "node scripts/trading-bot/index.js --once"
   },
   "keywords": [],
   "author": "",
@@ -18,5 +20,12 @@
   "type": "commonjs",
   "devDependencies": {
     "playwright": "^1.59.1"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "ccxt": "^4.5.49",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.16.0",
+    "node-cron": "^4.2.1"
   }
 }
