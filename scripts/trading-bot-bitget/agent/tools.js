@@ -13,6 +13,7 @@
 const api   = require('../data/bitget-api');
 const state = require('../lib/state');
 const config = require('../lib/config');
+const { buildKlineStructureSummary } = require('./kline-structure');
 
 // ── Tool definitions (OpenAI function-calling format) ─────────────────────────
 
@@ -57,6 +58,8 @@ const TOOL_DEFINITIONS = [
         'Use granularity=4H/1D only for broader context if needed. ' +
         'Look for: trend-aligned breakout above horizontal resistance on 15m, pullback to the breakout level, ' +
         'bounce signs (higher low, volume contraction on pullback then expansion on bounce). ' +
+        'The result includes deterministic structure fields under summary.structure and top-level structure: ' +
+        'resistanceLevel, supportLevel, pullbackZone, breakout.detected, breakout.retestConfirmed, latestStructureBias. ' +
         'Returns candles ordered oldest → newest.',
       parameters: {
         type: 'object',
@@ -127,32 +130,6 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
-      name: 'search_coin_events',
-      description:
-        'Search for upcoming events and risk factors for a coin: token unlocks, exchange listings, ' +
-        'project announcements, rug indicators. ' +
-        'MUST call this for any candidate you are considering recommending for BUY. ' +
-        'High unlock risk or suspicious indicators = downgrade to REJECT.',
-      parameters: {
-        type: 'object',
-        properties: {
-          symbol: {
-            type: 'string',
-            description: 'Futures symbol e.g. BTCUSDT',
-          },
-          coin_name: {
-            type: 'string',
-            description: 'Full coin name for better search e.g. "Bitcoin". Optional.',
-          },
-        },
-        required: ['symbol'],
-      },
-    },
-  },
-
-  {
-    type: 'function',
-    function: {
       name: 'get_open_positions',
       description:
         'Get current open positions and portfolio status. ' +
@@ -207,6 +184,8 @@ async function handleGetKlineData(args) {
     args.limit       || 1000,  // ✅ Max Bitget API limit: 1000 candles per request
   );
 
+  const structure = buildKlineStructureSummary(candles, args.granularity || '1H');
+
   // Return summarized structure analysis instead of raw candles
   // (saves tokens; LLM gets what it needs for HTF analysis)
   const last = candles[candles.length - 1];
@@ -230,6 +209,7 @@ async function handleGetKlineData(args) {
     granularity:      args.granularity || '1H',
     totalCandles:     candles.length,
     latestCandle:     last,
+    structure,
     summary: {
       high20Period:      high20,
       low20Period:       low20,
@@ -239,6 +219,7 @@ async function handleGetKlineData(args) {
       resistanceLevel:   parseFloat(resistanceLevel.toFixed(8)),
       possibleBreakout,
       pullbackFromPeakPercent: parseFloat(pullbackPercent),
+      structure,
     },
     // Include last 10 candles in full for detailed analysis
     recentCandles: candles.slice(-10),
@@ -254,7 +235,7 @@ async function handleGetFundingRate(args) {
 }
 
 async function handleSearchCoinEvents(args) {
-  return api.searchCoinEvents(args.symbol, args.coin_name);
+  return api.searchCoinEvents(args.symbol, args.coin_name, args.mode || 'fast');
 }
 
 async function handleGetOpenPositions() {

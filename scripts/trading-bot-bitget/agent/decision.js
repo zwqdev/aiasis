@@ -52,47 +52,10 @@ For each scan cycle, you MUST call tools in this order:
 4. get_kline_data (15m) — find breakout-pullback-bounce entry timing
 5. get_oi_data — check OI divergence for candidates that pass kline analysis
 6. get_funding_rate — check funding sentiment for top candidates
-7. search_coin_events — MANDATORY before any BUY recommendation
-8. Return final JSON decision (no more tool calls)
-
-## EVENT-DRIVEN OPPORTUNITIES (新闻交易策略)
-Trading profits fundamentally come from TWO factors: **direction** (判断方向) + **volatility** (波动性).
-Event-driven trades excel at BOTH — events provide clear directional bias AND often trigger significant market moves.
-
-### KEY EVENT TYPES TO MONITOR
-1. **Official announcements** (官方公告) — Fee changes, protocol upgrades, partnership exits
-   - Example: Lighter raising Arc fee rate 4% → 20% → liquidations → price crash
-   
-2. **Security/exploit events** (安全漏洞) — Bridge hacks, contract exploits, fund theft
-   - Example: KelpDAO hack → AAVE bad debt → down $111 → $91 in 5 hours
-   
-3. **Regulatory/investigation actions** (监管调查) — Exchange investigations, influencer reports, scrutiny
-   - Example: ZachXBT reports Rave manipulation → Bitget CEO responds → token crashes $20 → $1 in 14 hours
-   
-4. **Key stakeholder actions** (关键参与者行动) — Ecosystem exits, whale liquidations, major deployments
-   - Example: Templar (TAO's biggest subnet) exits TAO ecosystem → TAO crashes $330 → $260 in 5 hours
-   
-5. **Abnormal trading patterns** (异常交易) — Market maker malfunctions, unusual volume/price swings
-   - Example: ETH maker bot malfunction → continuous buy/sell in $2040-2060 range for 10 mins → front-run opportunity
-
-### EDGE: NEWS TRADING ENTRY SIGNALS
-- **Early mover edge**: Monitor breaking news first, identify direction quickly, get ahead of market repricing
-- **Cognitive edge**: Even if entering late, correctly identify event's cascading impact (e.g., hack → collateral shortage → down pressure)
-- **Technical convergence**: Combine event directional bias with technical structure:
-  - Bullish event + strong 1H trend + 15m breakout forming = highest conviction
-  - Bearish event + weakening 1H structure + price below key support = high confidence short setup
-- **Volume spike signal**: Event news often triggers unusual volume spike on affected symbol(s) — this is your alert
-
-### EVENT ANALYSIS CHECKS (BEFORE recommending BUY)
-- [ ] What's the event? (官方公告/安全漏洞/监管审查/生态退出/异常交易)
-- [ ] Clear directional bias? (是否有明确的方向性)
-- [ ] Cascading impact? Will this ripple to other related tokens/ecosystems? (是否有连锁反应)
-- [ ] Timeline? Is market still repricing or already priced in? (市场是否已消化)
-- [ ] Collateral impact? For chains/ecosystems, check if collateral/liquidity at risk (是否涉及质押/流动性)
-- [ ] Wallet clusters? For tokens, monitor if team/whale clusters dumping (关键钱包行为)
-- [ ] Token mechanics warning: Non-fully-liquid tokens (锁仓多) are more manipulable — higher pump/dump risk (非全流通高风险)
+7. Return final JSON decision (no more tool calls)
 
 ## ENTRY CRITERIA (ALL must be satisfied for BUY)
+- Use the deterministic structure fields from get_kline_data first. Prefer structure.resistanceLevel, structure.supportLevel, structure.pullbackZone, structure.breakout.detected, and structure.breakout.retestConfirmed over free-form chart guessing.
 - [ ] 1H trend confirmation: trend is bullish (higher highs/higher lows) or price holds above key 1H support
 - [ ] 15m breakout: price has closed ABOVE a significant horizontal resistance on the 15m chart
 - [ ] Volume confirmation: 15m breakout candle volume is ≥1.5x the 20-period average on 15m
@@ -101,14 +64,12 @@ Event-driven trades excel at BOTH — events provide clear directional bias AND 
 - [ ] OI neutral or rising (not collapsing — would indicate distribution)
 - [ ] Funding rate: not severely overheated (>0.1% per 8h)
 - [ ] Risk/reward ≥ 1:2 (TP1 distance ≥ 2× SL distance from entry)
-- [ ] No critical events: no major unlock in next 7 days, no suspicious rug indicators
 - [ ] Portfolio: open position slots available, daily loss limit not hit
-- [ ] **[EVENT-DRIVEN ONLY]** If driven by negative event: confirmed directional bias from news, cascading impact likely, wallet clusters/collateral at risk assessed
 
 ## PRICE LEVEL IDENTIFICATION
-- Blue line (breakout level): most recent significant horizontal resistance that price closed above on 15m
-- Yellow zone (entry zone): pullback target = the blue line ± small buffer on 15m (where to buy)
-- Red line (stop loss): below the yellow zone; a 15m candle close below this = structural failure
+- Blue line (breakout level): use structure.resistanceLevel from 15m when available
+- Yellow zone (entry zone): use structure.pullbackZone from 15m when available
+- Red line (stop loss): below the yellow zone; prefer structure.supportLevel or the next lower 15m support as the invalidation level
   → SL is typically 1-4% below entry, set at the next lower key 15m support while respecting 1H trend context
 - Green lines (take profit):
   → TP1 = next overhead resistance on 15m (closest significant level above entry)
@@ -145,7 +106,6 @@ You MUST return valid JSON only (no markdown, no extra text):
 
 ## HARD RULES
 - NEVER recommend BUY if portfolio slots are full or daily loss limit is hit
-- NEVER recommend BUY without calling search_coin_events first
 - NEVER recommend BUY if confidence < 3
 - NEVER add markdown code fences to your JSON output
 - If no candidate meets all criteria, return action=SKIP with skipReason
@@ -169,7 +129,7 @@ async function getTradeDecision() {
       content:
         `Start a new scan cycle. Current time: ${new Date().toISOString()}. ` +
         `Begin with get_open_positions, then get_top_gainers(limit=15, min_change_percent=-100, min_volume_usdt=0). ` +
-        `Analyze symbols from this TOP 15 pool with kline, OI, funding and event tools. ` +
+        `Analyze symbols from this TOP 15 pool with kline, OI, and funding tools. ` +
         `Return your final JSON decision when done.`,
     },
   ];
