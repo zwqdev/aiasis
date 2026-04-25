@@ -36,12 +36,12 @@ module.exports = {
   marginMode: env('MARGIN_MODE', 'isolated'),
 
   // ── Scanner thresholds ─────────────────────────────────────────────────────
-  // Min 24h gain % to enter gainer scan
-  minGainerPercent: envFloat('MIN_GAINER_PERCENT', 5),
-  // Min 24h USDT volume (filters illiquid coins)
-  minVolumeUsdt: envFloat('MIN_VOLUME_USDT', 2_000_000),
+  // Min 24h gain % for gainer scan (default -100 = include all symbols, then rank)
+  minGainerPercent: envFloat('MIN_GAINER_PERCENT', -100),
+  // Min 24h USDT volume (default 0 = no volume filter)
+  minVolumeUsdt: envFloat('MIN_VOLUME_USDT', 0),
   // How many top gainers to pass to LLM
-  topGainersLimit: envInt('TOP_GAINERS_LIMIT', 30),
+  topGainersLimit: envInt('TOP_GAINERS_LIMIT', 15),
 
   // ── Schedule ───────────────────────────────────────────────────────────────
   cronSchedule: env('CRON_SCHEDULE', '*/30 * * * *'),
@@ -49,4 +49,6 @@ module.exports = {
   // ── LLM agent ─────────────────────────────────────────────────────────────
   // Max tool-call turns before aborting
   maxAgentTurns: envInt('MAX_AGENT_TURNS', 20),
+  // Print detailed LLM/tool reasoning trace logs (set LLM_TRACE=false to disable)
+  llmTrace: env('LLM_TRACE', 'true') !== 'false',
 };

@@ -23,6 +23,11 @@ const log = makeLogger('agent');
 
 let _client = null;
 
+function traceLog(message, meta) {
+  if (!config.llmTrace) return;
+  log.info(message, meta);
+}
+
 function getClient() {
   if (!_client) {
     if (!config.llmApiKey) throw new Error('OPENAI_API_KEY (or LLM_API_KEY) is not set');
@@ -42,13 +47,50 @@ Your strategy is the "Breakout-Pullback-Bounce" methodology used by professional
 ## MANDATORY TOOL CALLING SEQUENCE
 For each scan cycle, you MUST call tools in this order:
 1. get_open_positions — check if new trades are even allowed
-2. get_top_gainers — get the candidate pool
+2. get_top_gainers(limit=15, min_change_percent=-100, min_volume_usdt=0) — fetch all-symbol 24h change ranking and take TOP 15 only
 3. get_kline_data (1H) — confirm trend direction (must align with LONG bias)
 4. get_kline_data (15m) — find breakout-pullback-bounce entry timing
 5. get_oi_data — check OI divergence for candidates that pass kline analysis
 6. get_funding_rate — check funding sentiment for top candidates
 7. search_coin_events — MANDATORY before any BUY recommendation
 8. Return final JSON decision (no more tool calls)
+
+## EVENT-DRIVEN OPPORTUNITIES (新闻交易策略)
+Trading profits fundamentally come from TWO factors: **direction** (判断方向) + **volatility** (波动性).
+Event-driven trades excel at BOTH — events provide clear directional bias AND often trigger significant market moves.
+
+### KEY EVENT TYPES TO MONITOR
+1. **Official announcements** (官方公告) — Fee changes, protocol upgrades, partnership exits
+   - Example: Lighter raising Arc fee rate 4% → 20% → liquidations → price crash
+   
+2. **Security/exploit events** (安全漏洞) — Bridge hacks, contract exploits, fund theft
+   - Example: KelpDAO hack → AAVE bad debt → down $111 → $91 in 5 hours
+   
+3. **Regulatory/investigation actions** (监管调查) — Exchange investigations, influencer reports, scrutiny
+   - Example: ZachXBT reports Rave manipulation → Bitget CEO responds → token crashes $20 → $1 in 14 hours
+   
+4. **Key stakeholder actions** (关键参与者行动) — Ecosystem exits, whale liquidations, major deployments
+   - Example: Templar (TAO's biggest subnet) exits TAO ecosystem → TAO crashes $330 → $260 in 5 hours
+   
+5. **Abnormal trading patterns** (异常交易) — Market maker malfunctions, unusual volume/price swings
+   - Example: ETH maker bot malfunction → continuous buy/sell in $2040-2060 range for 10 mins → front-run opportunity
+
+### EDGE: NEWS TRADING ENTRY SIGNALS
+- **Early mover edge**: Monitor breaking news first, identify direction quickly, get ahead of market repricing
+- **Cognitive edge**: Even if entering late, correctly identify event's cascading impact (e.g., hack → collateral shortage → down pressure)
+- **Technical convergence**: Combine event directional bias with technical structure:
+  - Bullish event + strong 1H trend + 15m breakout forming = highest conviction
+  - Bearish event + weakening 1H structure + price below key support = high confidence short setup
+- **Volume spike signal**: Event news often triggers unusual volume spike on affected symbol(s) — this is your alert
+
+### EVENT ANALYSIS CHECKS (BEFORE recommending BUY)
+- [ ] What's the event? (官方公告/安全漏洞/监管审查/生态退出/异常交易)
+- [ ] Clear directional bias? (是否有明确的方向性)
+- [ ] Cascading impact? Will this ripple to other related tokens/ecosystems? (是否有连锁反应)
+- [ ] Timeline? Is market still repricing or already priced in? (市场是否已消化)
+- [ ] Collateral impact? For chains/ecosystems, check if collateral/liquidity at risk (是否涉及质押/流动性)
+- [ ] Wallet clusters? For tokens, monitor if team/whale clusters dumping (关键钱包行为)
+- [ ] Token mechanics warning: Non-fully-liquid tokens (锁仓多) are more manipulable — higher pump/dump risk (非全流通高风险)
 
 ## ENTRY CRITERIA (ALL must be satisfied for BUY)
 - [ ] 1H trend confirmation: trend is bullish (higher highs/higher lows) or price holds above key 1H support
@@ -61,6 +103,7 @@ For each scan cycle, you MUST call tools in this order:
 - [ ] Risk/reward ≥ 1:2 (TP1 distance ≥ 2× SL distance from entry)
 - [ ] No critical events: no major unlock in next 7 days, no suspicious rug indicators
 - [ ] Portfolio: open position slots available, daily loss limit not hit
+- [ ] **[EVENT-DRIVEN ONLY]** If driven by negative event: confirmed directional bias from news, cascading impact likely, wallet clusters/collateral at risk assessed
 
 ## PRICE LEVEL IDENTIFICATION
 - Blue line (breakout level): most recent significant horizontal resistance that price closed above on 15m
@@ -125,8 +168,8 @@ async function getTradeDecision() {
       role: 'user',
       content:
         `Start a new scan cycle. Current time: ${new Date().toISOString()}. ` +
-        `Begin with get_open_positions, then get_top_gainers. ` +
-        `Analyze the most promising candidates with kline, OI, funding and event tools. ` +
+        `Begin with get_open_positions, then get_top_gainers(limit=15, min_change_percent=-100, min_volume_usdt=0). ` +
+        `Analyze symbols from this TOP 15 pool with kline, OI, funding and event tools. ` +
         `Return your final JSON decision when done.`,
     },
   ];
@@ -153,6 +196,12 @@ async function getTradeDecision() {
     const choice = response.choices[0];
     const msg    = choice.message;
 
+    if (msg.content && msg.content.trim()) {
+      traceLog(`Turn ${turn + 1}: assistant message`, {
+        content: msg.content,
+      });
+    }
+
     // Add assistant message to history
     messages.push(msg);
 
@@ -173,6 +222,11 @@ async function getTradeDecision() {
           args = {};
         }
 
+        traceLog(`Turn ${turn + 1}: tool call`, {
+          name,
+          args,
+        });
+
         log.debug('Executing tool', { name, args });
         toolCallCount++;
 
@@ -180,9 +234,17 @@ async function getTradeDecision() {
         try {
           result = await executeTool(name, args);
           log.debug('Tool result', { name, resultSize: JSON.stringify(result).length });
+          traceLog(`Turn ${turn + 1}: tool result`, {
+            name,
+            result,
+          });
         } catch (err) {
           log.warn('Tool execution failed', { name, error: err.message });
           result = { error: err.message, toolName: name };
+          traceLog(`Turn ${turn + 1}: tool error`, {
+            name,
+            error: err.message,
+          });
         }
 
         messages.push({
@@ -190,6 +252,9 @@ async function getTradeDecision() {
           tool_call_id: toolCall.id,
           content:      JSON.stringify(result),
         });
+
+        // ✅ Small delay between tool calls to reduce connection churn on proxy
+        await new Promise((r) => setTimeout(r, 50));
       }
 
       continue; // Next turn
@@ -199,6 +264,7 @@ async function getTradeDecision() {
     const raw = (msg.content || '').trim();
     log.info('Agent finished', { turns: turn + 1, totalToolCalls: toolCallCount });
     log.debug('Raw LLM response', { raw: raw.slice(0, 500) });
+    traceLog(`Turn ${turn + 1}: final raw response`, { raw });
 
     // Strip markdown code fences if LLM added them despite instructions
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -218,9 +284,13 @@ async function getTradeDecision() {
         rr:         decision.riskRewardRatio,
         reason:     (decision.reason || '').slice(0, 120),
       });
+      traceLog('Decision full JSON', {
+        decision,
+      });
       return decision;
     } catch (err) {
       log.error('Failed to parse LLM JSON', { error: err.message, raw: raw.slice(0, 300) });
+      traceLog('Failed to parse LLM JSON (raw)', { raw });
       return null;
     }
   }

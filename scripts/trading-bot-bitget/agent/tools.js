@@ -30,15 +30,15 @@ const TOOL_DEFINITIONS = [
         properties: {
           limit: {
             type: 'number',
-            description: 'Max symbols to return. Default 30.',
+            description: 'Max symbols to return. Default 15.',
           },
           min_change_percent: {
             type: 'number',
-            description: 'Min 24h price change % to include. Default 5.',
+            description: 'Min 24h price change % to include. Default -100 (include all symbols, then rank by change).',
           },
           min_volume_usdt: {
             type: 'number',
-            description: 'Min 24h USDT volume to include (filters illiquid coins). Default 2000000.',
+            description: 'Min 24h USDT volume to include. Default 0 (no volume filter).',
           },
         },
         required: [],
@@ -72,7 +72,7 @@ const TOOL_DEFINITIONS = [
           },
           limit: {
             type: 'number',
-            description: 'Number of candles to return. Default 60 (enough for ~2 months daily).',
+            description: 'Number of candles to return. Default 1000 (Bitget API max). For 15m: ~10 days, 1H: ~42 days, 1D: ~1000 days (~3 years).',
           },
         },
         required: ['symbol', 'granularity'],
@@ -172,18 +172,39 @@ const TOOL_DEFINITIONS = [
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 
 async function handleGetTopGainers(args) {
-  return api.getTopGainers(
-    args.limit             || config.topGainersLimit,
-    args.min_change_percent || config.minGainerPercent,
-    args.min_volume_usdt   || config.minVolumeUsdt,
-  );
+  const limit = (args.limit !== undefined) ? args.limit : 15;
+  const minVolumeUsdt = (args.min_volume_usdt !== undefined)
+    ? args.min_volume_usdt
+    : 0;
+  const requestedMinChange = (args.min_change_percent !== undefined)
+    ? args.min_change_percent
+    : -100;
+
+  // If caller explicitly asks to include all symbols (<= 0 threshold), return directly.
+  if (requestedMinChange <= 0) {
+    return api.getTopGainers(limit, requestedMinChange, minVolumeUsdt);
+  }
+
+  // Adaptive fallback: in low-volatility markets, relax threshold to avoid empty candidate pool.
+  const fallbackThresholds = [requestedMinChange, 1, 0.5, 0]
+    .filter((v, idx, arr) => v >= 0 && arr.indexOf(v) === idx)
+    .sort((a, b) => b - a);
+
+  for (const minChange of fallbackThresholds) {
+    const rows = await api.getTopGainers(limit, minChange, minVolumeUsdt);
+    if (rows.length > 0 || minChange === 0) {
+      return rows;
+    }
+  }
+
+  return [];
 }
 
 async function handleGetKlineData(args) {
   const candles = await api.getKlineData(
     args.symbol,
     args.granularity || '1H',
-    args.limit       || 60,
+    args.limit       || 1000,  // ✅ Max Bitget API limit: 1000 candles per request
   );
 
   // Return summarized structure analysis instead of raw candles
