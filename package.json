@@ -12,7 +12,9 @@
     "login:x": "node scripts/x-login.js",
     "analyze:profile": "node scripts/x-analyze-profile.js",
     "bot": "node scripts/trading-bot/index.js",
-    "bot:once": "node scripts/trading-bot/index.js --once"
+    "bot:once": "node scripts/trading-bot/index.js --once",
+    "bitget": "node scripts/trading-bot-bitget/index.js",
+    "bitget:once": "node scripts/trading-bot-bitget/index.js --once"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +28,8 @@
     "ccxt": "^4.5.49",
     "dotenv": "^17.4.2",
     "ethers": "^6.16.0",
-    "node-cron": "^4.2.1"
+    "https-proxy-agent": "^9.0.0",
+    "node-cron": "^4.2.1",
+    "openai": "^6.34.0"
   }
 }

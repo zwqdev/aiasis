@@ -1,0 +1,279 @@
+'use strict';
+
+/**
+ * Tool definitions and handlers for the LLM trading agent (agent/tools.js)
+ *
+ * Each tool has:
+ *  - A JSON Schema definition (passed to the LLM)
+ *  - An async handler function (called when the LLM invokes the tool)
+ *
+ * The LLM decides autonomously which tools to call and in what order.
+ */
+
+const api   = require('../data/bitget-api');
+const state = require('../lib/state');
+const config = require('../lib/config');
+
+// ── Tool definitions (OpenAI function-calling format) ─────────────────────────
+
+const TOOL_DEFINITIONS = [
+  {
+    type: 'function',
+    function: {
+      name: 'get_top_gainers',
+      description:
+        'Fetch the top 24h price gainers from Bitget USDT-M futures. ' +
+        'Always call this FIRST at the start of each scan cycle to get the candidate list. ' +
+        'Returns symbols sorted by 24h change %, with volume and price info.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'number',
+            description: 'Max symbols to return. Default 30.',
+          },
+          min_change_percent: {
+            type: 'number',
+            description: 'Min 24h price change % to include. Default 5.',
+          },
+          min_volume_usdt: {
+            type: 'number',
+            description: 'Min 24h USDT volume to include (filters illiquid coins). Default 2000000.',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_kline_data',
+      description:
+        'Fetch OHLCV candlestick data for a symbol to analyze chart structure. ' +
+        'Use granularity=1H to confirm trend direction (higher highs/lows or key-level hold). ' +
+        'Use granularity=15m to find precise entry timing with breakout/pullback/bounce rules. ' +
+        'Use granularity=4H/1D only for broader context if needed. ' +
+        'Look for: trend-aligned breakout above horizontal resistance on 15m, pullback to the breakout level, ' +
+        'bounce signs (higher low, volume contraction on pullback then expansion on bounce). ' +
+        'Returns candles ordered oldest → newest.',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: {
+            type: 'string',
+            description: 'Futures symbol e.g. BTCUSDT',
+          },
+          granularity: {
+            type: 'string',
+            enum: ['15m', '1H', '4H', '1D', '1W'],
+            description: '15m = entry timing. 1H = trend confirmation. 4H/1D = macro context. 1W = long-term structure.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Number of candles to return. Default 60 (enough for ~2 months daily).',
+          },
+        },
+        required: ['symbol', 'granularity'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_oi_data',
+      description:
+        'Get Open Interest data for a symbol and compare to the previous snapshot. ' +
+        'OI rising while price stays flat = smart money accumulating (bullish divergence). ' +
+        'OI rising while price dumps = distribution (bearish). ' +
+        'Call this for any candidate that passes the kline structure check.',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: {
+            type: 'string',
+            description: 'Symbol e.g. BTCUSDT',
+          },
+        },
+        required: ['symbol'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_funding_rate',
+      description:
+        'Get current funding rate for a symbol. ' +
+        'Funding > +0.05% = overheated longs — crowded, high squeeze risk if it reverses. ' +
+        'Funding < -0.01% = crowded shorts — potential short squeeze fuel. ' +
+        'Neutral funding = healthy. Call this before finalizing any BUY decision.',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: {
+            type: 'string',
+            description: 'Symbol e.g. BTCUSDT',
+          },
+        },
+        required: ['symbol'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'search_coin_events',
+      description:
+        'Search for upcoming events and risk factors for a coin: token unlocks, exchange listings, ' +
+        'project announcements, rug indicators. ' +
+        'MUST call this for any candidate you are considering recommending for BUY. ' +
+        'High unlock risk or suspicious indicators = downgrade to REJECT.',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbol: {
+            type: 'string',
+            description: 'Futures symbol e.g. BTCUSDT',
+          },
+          coin_name: {
+            type: 'string',
+            description: 'Full coin name for better search e.g. "Bitcoin". Optional.',
+          },
+        },
+        required: ['symbol'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_open_positions',
+      description:
+        'Get current open positions and portfolio status. ' +
+        'Call this before making any BUY decision to check: ' +
+        '(1) Is this symbol already in a position? ' +
+        '(2) Is the max position count reached? ' +
+        '(3) How much daily loss has occurred?',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+];
+
+// ── Tool handlers ─────────────────────────────────────────────────────────────
+
+async function handleGetTopGainers(args) {
+  return api.getTopGainers(
+    args.limit             || config.topGainersLimit,
+    args.min_change_percent || config.minGainerPercent,
+    args.min_volume_usdt   || config.minVolumeUsdt,
+  );
+}
+
+async function handleGetKlineData(args) {
+  const candles = await api.getKlineData(
+    args.symbol,
+    args.granularity || '1H',
+    args.limit       || 60,
+  );
+
+  // Return summarized structure analysis instead of raw candles
+  // (saves tokens; LLM gets what it needs for HTF analysis)
+  const last = candles[candles.length - 1];
+  const prev20 = candles.slice(-20);
+
+  const high20  = Math.max(...prev20.map((c) => c.high));
+  const low20   = Math.min(...prev20.map((c) => c.low));
+  const avgVol  = prev20.reduce((s, c) => s + c.volumeUsdt, 0) / prev20.length;
+
+  // Detect potential breakout: last close > 20-period high (excluding last candle)
+  const resistanceLevel = Math.max(...prev20.slice(0, -1).map((c) => c.high));
+  const possibleBreakout = last.close > resistanceLevel;
+
+  // Detect pullback: last few candles pulled back after a recent new high
+  const last5  = candles.slice(-5);
+  const peak5  = Math.max(...last5.map((c) => c.high));
+  const pullbackPercent = ((peak5 - last.close) / peak5 * 100).toFixed(2);
+
+  return {
+    symbol:           args.symbol,
+    granularity:      args.granularity || '1H',
+    totalCandles:     candles.length,
+    latestCandle:     last,
+    summary: {
+      high20Period:      high20,
+      low20Period:       low20,
+      avgVolumeUsdt20:   Math.round(avgVol),
+      latestVolumeUsdt:  last.volumeUsdt,
+      volumeVsAvg:       parseFloat((last.volumeUsdt / avgVol).toFixed(2)),
+      resistanceLevel:   parseFloat(resistanceLevel.toFixed(8)),
+      possibleBreakout,
+      pullbackFromPeakPercent: parseFloat(pullbackPercent),
+    },
+    // Include last 10 candles in full for detailed analysis
+    recentCandles: candles.slice(-10),
+  };
+}
+
+async function handleGetOiData(args) {
+  return api.getOiData(args.symbol);
+}
+
+async function handleGetFundingRate(args) {
+  return api.getFundingRate(args.symbol);
+}
+
+async function handleSearchCoinEvents(args) {
+  return api.searchCoinEvents(args.symbol, args.coin_name);
+}
+
+async function handleGetOpenPositions() {
+  const positions = state.getOpenPositions();
+  const dailyLoss = state.getDailyLoss();
+  const openCount = Object.keys(positions).length;
+
+  return {
+    openPositions:   positions,
+    openCount,
+    maxPositions:    config.maxOpenPositions,
+    slotsAvailable:  config.maxOpenPositions - openCount,
+    dailyLossUsdt:   parseFloat(dailyLoss.toFixed(2)),
+    dailyLossLimit:  config.dailyLossLimitUsdt,
+    dailyLossRemaining: parseFloat((config.dailyLossLimitUsdt - dailyLoss).toFixed(2)),
+    canOpenNewTrade: openCount < config.maxOpenPositions && dailyLoss < config.dailyLossLimitUsdt,
+  };
+}
+
+// ── Dispatch ──────────────────────────────────────────────────────────────────
+
+const HANDLERS = {
+  get_top_gainers:    handleGetTopGainers,
+  get_kline_data:     handleGetKlineData,
+  get_oi_data:        handleGetOiData,
+  get_funding_rate:   handleGetFundingRate,
+  search_coin_events: handleSearchCoinEvents,
+  get_open_positions: handleGetOpenPositions,
+};
+
+/**
+ * Execute a tool call from the LLM.
+ * @param {string} name - tool name
+ * @param {object} args - parsed arguments
+ * @returns {Promise<object>} - result to send back to LLM
+ */
+async function executeTool(name, args) {
+  const handler = HANDLERS[name];
+  if (!handler) throw new Error(`Unknown tool: ${name}`);
+  return handler(args);
+}
+
+module.exports = { TOOL_DEFINITIONS, executeTool };
