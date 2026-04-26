@@ -23,7 +23,7 @@ module.exports = {
 
   // ── Risk params ────────────────────────────────────────────────────────────
   // Max USDT margin per trade
-  maxPositionMarginUsdt: envFloat('MAX_POSITION_MARGIN_USDT', 50),
+  maxPositionMarginUsdt: envFloat('MAX_POSITION_MARGIN_USDT', 100),
   // Max loss per position before forced SL close
   maxLossPerPositionUsdt: envFloat('MAX_LOSS_PER_POSITION_USDT', 100),
   // Daily loss limit: pause new trades after this loss

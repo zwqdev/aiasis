@@ -137,21 +137,34 @@ async function openPosition(symbol, side, leverage, decision = {}) {
   const entryPrice = await getPrice(symbol);
   const qty        = parseFloat(((margin * leverage) / entryPrice).toFixed(6));
   const ccxtSide   = side === 'LONG' ? 'buy' : 'sell';
+  const stopPrice  = decision.stopLoss || calcStopPrice(side, entryPrice, qty, maxLoss);
+  const tp1Price   = decision.targets?.tp1 || null;
 
   let order;
   try {
     order = await ex.createOrder(ccxtSym, 'market', ccxtSide, qty, undefined, {
       marginMode:  config.marginMode,
       posSide:     side === 'LONG' ? 'long' : 'short', // Bitget hedge mode
+      // Bitget official v2 place-order fields for attached TP/SL.
+      // `presetStopSurplusPrice` = take-profit trigger, `presetStopLossPrice` = stop-loss trigger.
+      presetStopSurplusPrice: tp1Price ? String(tp1Price) : undefined,
+      presetStopLossPrice: String(stopPrice),
     });
-    log.info('Market order placed', { symbol, side, qty, entryPrice, orderId: order.id });
+    log.info('Market order placed', {
+      symbol,
+      side,
+      qty,
+      entryPrice,
+      orderId: order.id,
+      presetTp: tp1Price,
+      presetSl: stopPrice,
+    });
   } catch (err) {
     log.error('Failed to open position', { symbol, error: err.message });
     return null;
   }
 
   // Place stop-loss order
-  const stopPrice  = calcStopPrice(side, entryPrice, qty, maxLoss);
   const stopSide   = side === 'LONG' ? 'sell' : 'buy';
 
   let stopOrder;
