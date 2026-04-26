@@ -33,7 +33,7 @@ module.exports = {
   // Default leverage (Bitget will cap at symbol max)
   leverage: envInt('LEVERAGE', 10),
   // Margin mode: isolated | cross
-  marginMode: env('MARGIN_MODE', 'isolated'),
+  marginMode: env('MARGIN_MODE', 'cross'),
 
   // ── Scanner thresholds ─────────────────────────────────────────────────────
   // Min 24h gain % for gainer scan (default -100 = include all symbols, then rank)
