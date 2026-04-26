@@ -51,4 +51,8 @@ module.exports = {
   maxAgentTurns: envInt('MAX_AGENT_TURNS', 20),
   // Print detailed LLM/tool reasoning trace logs (set LLM_TRACE=false to disable)
   llmTrace: env('LLM_TRACE', 'true') !== 'false',
+
+  // ── UX notifications ──────────────────────────────────────────────────────
+  // macOS popup notification on BUY signal / execution
+  buyNotification: env('BUY_NOTIFICATION', 'true') !== 'false',
 };
