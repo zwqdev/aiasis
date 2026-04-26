@@ -15,6 +15,8 @@ const state = require('../lib/state');
 const config = require('../lib/config');
 const { buildKlineStructureSummary } = require('./kline-structure');
 
+const MANDATORY_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+
 // ── Tool definitions (OpenAI function-calling format) ─────────────────────────
 
 const TOOL_DEFINITIONS = [
@@ -31,7 +33,7 @@ const TOOL_DEFINITIONS = [
         properties: {
           limit: {
             type: 'number',
-            description: 'Max symbols to return. Default 15.',
+            description: 'Number of top gainers to include before adding mandatory majors. Default 12.',
           },
           min_change_percent: {
             type: 'number',
@@ -149,7 +151,7 @@ const TOOL_DEFINITIONS = [
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 
 async function handleGetTopGainers(args) {
-  const limit = (args.limit !== undefined) ? args.limit : 15;
+  const limit = (args.limit !== undefined) ? args.limit : 12;
   const minVolumeUsdt = (args.min_volume_usdt !== undefined)
     ? args.min_volume_usdt
     : 0;
@@ -157,9 +159,27 @@ async function handleGetTopGainers(args) {
     ? args.min_change_percent
     : -100;
 
+  async function withMandatorySymbols(rows) {
+    const merged = [...rows];
+    const seen = new Set(rows.map((r) => r.symbol));
+
+    const universe = await api.getTopGainers(1000, -100, 0);
+    for (const symbol of MANDATORY_SYMBOLS) {
+      if (seen.has(symbol)) continue;
+      const row = universe.find((r) => r.symbol === symbol);
+      if (row) {
+        merged.push(row);
+        seen.add(symbol);
+      }
+    }
+
+    return merged;
+  }
+
   // If caller explicitly asks to include all symbols (<= 0 threshold), return directly.
   if (requestedMinChange <= 0) {
-    return api.getTopGainers(limit, requestedMinChange, minVolumeUsdt);
+    const rows = await api.getTopGainers(limit, requestedMinChange, minVolumeUsdt);
+    return withMandatorySymbols(rows);
   }
 
   // Adaptive fallback: in low-volatility markets, relax threshold to avoid empty candidate pool.
@@ -170,11 +190,11 @@ async function handleGetTopGainers(args) {
   for (const minChange of fallbackThresholds) {
     const rows = await api.getTopGainers(limit, minChange, minVolumeUsdt);
     if (rows.length > 0 || minChange === 0) {
-      return rows;
+      return withMandatorySymbols(rows);
     }
   }
 
-  return [];
+  return withMandatorySymbols([]);
 }
 
 async function handleGetKlineData(args) {

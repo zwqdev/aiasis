@@ -47,7 +47,7 @@ Your strategy is the "Breakout-Pullback-Bounce" methodology used by professional
 ## MANDATORY TOOL CALLING SEQUENCE
 For each scan cycle, you MUST call tools in this order:
 1. get_open_positions — check if new trades are even allowed
-2. get_top_gainers(limit=15, min_change_percent=-100, min_volume_usdt=0) — fetch all-symbol 24h change ranking and take TOP 15 only
+2. get_top_gainers(limit=12, min_change_percent=-100, min_volume_usdt=0) — fetch all-symbol 24h change ranking and take TOP 12 only, then include BTC/ETH/SOL majors
 3. get_kline_data (1H) — confirm trend direction (must align with LONG bias)
 4. get_kline_data (15m) — find breakout-pullback-bounce entry timing
 5. get_oi_data — check OI divergence for candidates that pass kline analysis
@@ -128,8 +128,8 @@ async function getTradeDecision() {
       role: 'user',
       content:
         `Start a new scan cycle. Current time: ${new Date().toISOString()}. ` +
-        `Begin with get_open_positions, then get_top_gainers(limit=15, min_change_percent=-100, min_volume_usdt=0). ` +
-        `Analyze symbols from this TOP 15 pool with kline, OI, and funding tools. ` +
+        `Begin with get_open_positions, then get_top_gainers(limit=12, min_change_percent=-100, min_volume_usdt=0). ` +
+        `Analyze symbols from this TOP 12 + BTC/ETH/SOL pool with kline, OI, and funding tools. ` +
         `Return your final JSON decision when done.`,
     },
   ];
