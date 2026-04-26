@@ -27,28 +27,14 @@
 require('dotenv').config();
 
 const cron = require('node-cron');
-const { execFile } = require('node:child_process');
 const { makeLogger } = require('./lib/logger');
 const config = require('./lib/config');
 const state  = require('./lib/state');
+const { notifyTradeSignal } = require('./lib/notification');
 const { getTradeDecision }              = require('./agent/decision');
 const { openPosition, monitorPositions } = require('./exchange/executor');
 
 const log = makeLogger('bot');
-
-function notifyMac(title, message) {
-  if (!config.buyNotification) return;
-  if (process.platform !== 'darwin') return;
-
-  execFile('osascript', [
-    '-e',
-    `display notification "${String(message).replace(/"/g, '\\"')}" with title "${String(title).replace(/"/g, '\\"')}"`,
-  ], (err) => {
-    if (err) {
-      log.debug('macOS notification failed', { error: err.message });
-    }
-  });
-}
 
 // ── Single trading cycle ──────────────────────────────────────────────────────
 
@@ -159,7 +145,10 @@ async function runCycle() {
     confidence: decision.confidence,
   });
 
-  notifyMac('Bitget BUY Signal', `${decision.symbol} ${decision.side || 'LONG'} | RR ${decision.riskRewardRatio}`);
+  notifyTradeSignal('Bitget BUY Signal', `${decision.symbol} ${decision.side || 'LONG'} | RR ${decision.riskRewardRatio}`, {
+    enabled: config.buyNotification,
+    logger: log,
+  });
 
   const pos = await openPosition(
     decision.symbol,
@@ -177,7 +166,10 @@ async function runCycle() {
       qty:        pos.qty,
       margin:     pos.margin,
     });
-    notifyMac('Bitget Order Opened', `${pos.symbol} qty=${pos.qty} entry=${pos.entryPrice}`);
+    notifyTradeSignal('Bitget Order Opened', `${pos.symbol} qty=${pos.qty} entry=${pos.entryPrice}`, {
+      enabled: config.buyNotification,
+      logger: log,
+    });
   } else {
     log.error('Failed to open position', { symbol: decision.symbol });
   }

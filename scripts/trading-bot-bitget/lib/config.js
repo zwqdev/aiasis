@@ -53,6 +53,6 @@ module.exports = {
   llmTrace: env('LLM_TRACE', 'true') !== 'false',
 
   // ── UX notifications ──────────────────────────────────────────────────────
-  // macOS popup notification on BUY signal / execution
+  // Desktop popup notification on BUY signal / execution (macOS + Windows)
   buyNotification: env('BUY_NOTIFICATION', 'true') !== 'false',
 };
