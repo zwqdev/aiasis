@@ -200,21 +200,40 @@ async function main() {
   }
 
   const runOnce = process.argv.includes('--once');
+  log.info('Execution mode resolved', { runOnce, argv: process.argv.slice(2) });
 
   if (runOnce) {
+    log.info('Running single cycle (--once)');
     await runCycle();
+    log.info('Single cycle complete');
     process.exit(0);
   }
 
   // Run one cycle immediately on startup, then follow cron
   await runCycle().catch((err) => log.error('Initial cycle failed', { error: err.message }));
 
-  cron.schedule(config.cronSchedule, async () => {
+  const scheduledTask = cron.schedule(config.cronSchedule, async () => {
+    log.info('Scheduled cycle triggered', { scheduledAt: new Date().toISOString() });
     await runCycle().catch((err) => log.error('Scheduled cycle failed', { error: err.message }));
   });
 
-  log.info(`Bot running on schedule: ${config.cronSchedule}`);
+  log.info('Bot running on schedule', {
+    cron: config.cronSchedule,
+    nextRun: scheduledTask.getNextRun()?.toISOString?.() || null,
+    status: typeof scheduledTask.getStatus === 'function' ? scheduledTask.getStatus() : 'unknown',
+  });
+
+  process.on('SIGINT', () => {
+    log.warn('Received SIGINT, shutting down');
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', () => {
+    log.warn('Received SIGTERM, shutting down');
+    process.exit(0);
+  });
 }
+
 
 main().catch((err) => {
   console.error('Fatal error:', err);
